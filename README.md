@@ -1,3 +1,32 @@
+# suite2p for th Wang Lab
+This fork contains a few changes to the original suite2p codebase to make it more suitable for our lab's needs.
+
+This repo is a fork from [the-wang-lab/suite2p](https://github.com/the-wang-lab/suite2p),
+which in turn is a fork from [MouseLand/suite2p](https://github.com/MouseLand/suite2p).
+Changes in [the-wang-lab/suite2p](https://github.com/the-wang-lab/suite2p) are meant to be merged into
+[MouseLand/suite2p](https://github.com/MouseLand/suite2p).
+Changes in the current repo are not meant to be merged upstream.
+
+## Features and workflows
+Additional workflows are collected in the [`wang_lab`](./wang_lab/) folder (see script files for details):
+|script file|use case|
+|---|---|
+|[`plot_roi_iterations.py`](./wang_lab/plot_roi_iterations.py)| save intermediate steps of ROI detection in the sparsery algorithm |
+
+## Installation
+```
+# create conda environment with necessary dependencies
+conda env create -n suite2p-wang-lab python=3.9 ipykernel
+conda activate suite2p-wang-lab
+
+# get source code
+git clone https://github.com/the-wang-lab/suite2p-wang-lab
+
+# install suite2p as local pip package
+cd suite2p-wang-lab
+pip install -e .[all]
+```
+
 # suite2p <img src="suite2p/logo/logo_unshaded.png" width="250" title="sweet two pea" alt="sweet two pea" align="right" vspace = "50">
 
 [![Documentation Status](https://readthedocs.org/projects/suite2p/badge/?version=latest)](https://suite2p.readthedocs.io/en/latest/?badge=latest)
