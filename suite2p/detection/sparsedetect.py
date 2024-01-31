@@ -11,6 +11,8 @@ from scipy.interpolate import RectBivariateSpline
 from scipy.ndimage import maximum_filter, uniform_filter
 from scipy.stats import mode as most_common_value
 
+from pathlib import Path
+
 from . import utils
 
 
@@ -580,6 +582,7 @@ def sparsery(
     n_iter_refine=3,
     thresh_split=1.25,
     # extract_patches=False, TODO patches and seeds are unused
+    save_path="",
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Algorithm for ROI detection if `sparse_mode` is True
     
@@ -665,6 +668,8 @@ def sparsery(
         Number of iterations to extend ROI, by default 3
     thresh_split : float, optional
         Threshold for variance explained ratio to split ROI, by default 1.25
+    save_path : str, optional
+        If not empty, save masks and quality control images used during ROI iterations, by default ""
     
     Returns
     -------
@@ -675,20 +680,43 @@ def sparsery(
     """
     new_ops = {}  # initialize new ops
 
+    if save_path:
+        # create output folder
+        p_out = Path(save_path) / 'sparsedetect'
+        p_out.mkdir(exist_ok=True, parents=True)
+        print(f'INFO saving ROI iterations to {p_out}')
+
+        def save_array(name, arr):
+            p = p_out / name
+            p.parent.mkdir(exist_ok=True, parents=True)
+            return np.save(p, arr)
+    else:
+        def save_array(name, arr):
+            pass
+
     ###############
     # Preprocessing
+    save_array("mean_img.npy", mov.mean(axis=0))
+    save_array("max_img.npy", mov.max(axis=0))
 
     # high-pass filter movie
     mov = utils.temporal_high_pass_filter(mov=mov, width=int(high_pass))
     new_ops["max_proj"] = mov.max(axis=0)
+    save_array("mean_img_hp.npy", mov.mean(axis=0))
+    save_array("max_img_hp.npy", mov.max(axis=0))
 
     # normalize by standard deviation
     mov_sd = utils.standard_deviation_over_time(mov, batch_size=batch_size)
     mov_norm = mov / mov_sd
+    save_array("img_hp_sd.npy", mov_sd)
+    save_array("mean_norm.npy", mov_norm.mean(axis=0))
+    save_array("max_norm.npy", mov_norm.max(axis=0))
 
     # subtract spatially low-pass per frame
     mov_norm = neuropil_subtraction(
         mov=mov_norm, filter_size=neuropil_high_pass)
+    save_array("mean_norm_lp.npy", mov_norm.mean(axis=0))
+    save_array("max_norm_lp.npy", mov_norm.max(axis=0))
 
     # downsample movie at various spatial scales
     mov_norm_down, grid_down = spatially_downsample(
@@ -735,6 +763,11 @@ def sparsery(
     #     mask_window = ((scale_pix * 1.5) // 2) * 2
 
     for n in range(max_iterations):
+
+        for i, arr in enumerate(mov_norm_sd_down):
+            save_array(f'roi_{n}/sd_down_{i}.npy', arr)
+        save_array(f'roi_{n}/mean_img.npy', mov_norm.mean(axis=0))
+        save_array(f'roi_{n}/max_img.npy', mov_norm.max(axis=0))
 
         ############
         # FIND PEAKS
@@ -791,12 +824,20 @@ def sparsery(
         #     patches.append(utils.square_mask(mask, mask_window, yi, xi))
         #     seeds.append([yi, xi])
 
+        save_array(f'roi_{n}/ypix_0.npy', ypix)
+        save_array(f'roi_{n}/xpix_0.npy', xpix)
+        save_array(f'roi_{n}/lam_0.npy', lam)
+
         ############
         # EXTEND ROI
-        for _ in range(n_iter_refine):
+        for i in range(n_iter_refine):
             # extend mask based on mean activity in active frames
             ypix, xpix, lam = iter_extend(
                 ypix, xpix, mov_norm, Ly, Lx, active_frames)
+            
+            save_array(f'roi_{n}/ypix_{i+1}.npy', ypix)
+            save_array(f'roi_{n}/xpix_{i+1}.npy', xpix)
+            save_array(f'roi_{n}/lam_{i+1}.npy', lam)
 
             # select pixels in ROI
             mov_norm_roi = mov_norm[:, ypix * Lx + xpix]

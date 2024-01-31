@@ -238,6 +238,7 @@ def select_rois(ops: Dict[str, Any], mov: np.ndarray, sparse_mode: bool = True):
             threshold_scaling=ops["threshold_scaling"],
             max_iterations=250 * ops["max_iterations"],
             percentile=ops.get("active_percentile", 0.0),
+            save_path=ops['save_path0'] if ops['save_roi_iterations'] else ''
         )
         ops.update(new_ops)
     else:
