@@ -16,7 +16,7 @@ Additional workflows are collected in the [`wang_lab`](./wang_lab/) folder (see 
 ## Installation
 ```
 # create conda environment with necessary dependencies
-conda env create -n suite2p-wang-lab python=3.9 ipykernel
+conda create -n suite2p-wang-lab python=3.9 ipykernel
 conda activate suite2p-wang-lab
 
 # get source code
