@@ -29,7 +29,7 @@ p_out = Path('../data/test_output/sparsedetect')
 #
 # # Running suite2p
 # To generate the additional files needed,
-# we will need to run suite2p setting `ops["save_roi_iterations"] = True`. This will create additional files in the `'save_path0' directory.
+# we will need to run suite2p setting `ops["wang:save_roi_iterations"] = True`. This will create additional files in the `'save_path0' directory.
 #
 # # Generate mean and max projection images
 # The function `plot_processing_steps` plots the time-averaged and max-projection-along-time images at the

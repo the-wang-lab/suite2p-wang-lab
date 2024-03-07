@@ -163,7 +163,7 @@ def add_square(yi, xi, lx, Ly, Lx):
     return y0, x0, mask
 
 
-def iter_extend(ypix, xpix, mov, Lyc, Lxc, active_frames):
+def iter_extend(ypix, xpix, mov, Lyc, Lxc, active_frames, thresh_active):
     """extend mask based on activity of pixels on active frames
     ACTIVE frames determined by threshold
 
@@ -207,7 +207,7 @@ def iter_extend(ypix, xpix, mov, Lyc, Lxc, active_frames):
         lam = roi_act.mean(axis=0)
 
         # select active pixels
-        thresh_lam = max(0, lam.max() / 5)
+        thresh_lam = max(0, lam.max()) * thresh_active
         pix_act = lam > thresh_lam
 
         if not np.any(pix_act):  # stop if no pixels are active
@@ -577,6 +577,12 @@ def sparsery(
     spatial_scale: int,
     threshold_scaling: float,
     max_iterations: int,
+    use_overlapping: bool,
+    use_alt_norm: bool,
+    thresh_peak_default,
+    thresh_act_pix: float,
+    width_max: int,
+    downsample_scale,
     percentile=0., # TODO add to documentation (docs/settings.rst)
     n_scales=5,
     n_iter_refine=3,
@@ -660,6 +666,19 @@ def sparsery(
         Threshold scaling factor, higher values lead to more ROIs detected
     max_iterations : int
         Maximum number of ROIs detected
+    use_overlapping : bool
+        If True, use overlapping instead of non-overlapping rolling mean for high-pass filter
+        Behavior depends on `high_pass` value, see utils.temporal_high_pass_filter for details
+    use_alt_norm : bool
+        If True, use alternative normalization method (see code for detail)
+    thresh_peak_default : float or None
+        If not None, use this as the threshold for `thresh_peak` instead of the value calculated in `set_scale_and_thresholds`
+    thresh_act_pix : float
+        Threshold for active pixels as fraction of max lam value
+    width_max : int
+        Width of max filter in bins, only used if `use_alt_norm` is True
+    downsample_scale : int or None
+        If not None, always look for ROI peaks at this spatial scale (0 is the original scale)
     percentile : float, optional
         If > 0, use percentile as dynamic threshold for active frames, by default 0.
     n_scales : int, optional
@@ -700,23 +719,43 @@ def sparsery(
     save_array("max_img.npy", mov.max(axis=0))
 
     # high-pass filter movie
-    mov = utils.temporal_high_pass_filter(mov=mov, width=int(high_pass))
+    mov = utils.temporal_high_pass_filter(mov=mov, width=int(high_pass), use_overlapping=use_overlapping)
     new_ops["max_proj"] = mov.max(axis=0)
     save_array("mean_img_hp.npy", mov.mean(axis=0))
     save_array("max_img_hp.npy", mov.max(axis=0))
 
-    # normalize by standard deviation
-    mov_sd = utils.standard_deviation_over_time(mov, batch_size=batch_size)
-    mov_norm = mov / mov_sd
-    save_array("img_hp_sd.npy", mov_sd)
-    save_array("mean_norm.npy", mov_norm.mean(axis=0))
-    save_array("max_norm.npy", mov_norm.max(axis=0))
+    if use_alt_norm:
+        print('INFO using alternative normalization method')
 
-    # subtract spatially low-pass per frame
-    mov_norm = neuropil_subtraction(
-        mov=mov_norm, filter_size=neuropil_high_pass)
-    save_array("mean_norm_lp.npy", mov_norm.mean(axis=0))
-    save_array("max_norm_lp.npy", mov_norm.max(axis=0))
+        # rolling max filter  
+        mov = utils.max_filter(mov=mov, width=int(width_max))
+        save_array("mean_img_hp_rmax.npy", mov.mean(axis=0))
+        save_array("max_img_hp_rmax.npy", mov.max(axis=0))
+
+        # subtract spatially low-pass per frame
+        mov = neuropil_subtraction(
+            mov=mov, filter_size=neuropil_high_pass)
+        save_array("mean_lp.npy", mov.mean(axis=0))
+        save_array("max_lp.npy", mov.max(axis=0))
+
+        # normalization 
+        # Find the maximum pixel intensity across the entire image stack
+        mov_max_intensity = np.max(mov)
+        # Normalize each image by the maximum intensity
+        mov_norm = mov / mov_max_intensity
+    else:
+        # normalize by standard deviation
+        mov_sd = utils.standard_deviation_over_time(mov, batch_size=batch_size)
+        mov_norm = mov / mov_sd
+        save_array("img_hp_sd.npy", mov_sd)
+        save_array("mean_norm.npy", mov_norm.mean(axis=0))
+        save_array("max_norm.npy", mov_norm.max(axis=0))
+
+        # subtract spatially low-pass per frame
+        mov_norm = neuropil_subtraction(
+            mov=mov_norm, filter_size=neuropil_high_pass)
+        save_array("mean_norm_lp.npy", mov_norm.mean(axis=0))
+        save_array("max_norm_lp.npy", mov_norm.max(axis=0))
 
     # downsample movie at various spatial scales
     mov_norm_down, grid_down = spatially_downsample(
@@ -739,6 +778,9 @@ def sparsery(
 
     ###############
     # ROI detection
+
+    if thresh_peak_default is not None:
+        thresh_peak = thresh_peak_default
 
     # get standard deviation for pixels for all values > Th2
     mov_norm_sd_down = [
@@ -774,10 +816,14 @@ def sparsery(
 
         # max value at each scale
         max_val_per_scale = np.array([m.max() for m in mov_norm_sd_down])
-        # max value across scales
-        max_val = max_val_per_scale.max()
-        # scale with max value
-        max_scale = np.argmax(max_val_per_scale)
+        if downsample_scale is not None:
+            max_val = max_val_per_scale[downsample_scale]
+            max_scale = downsample_scale
+        else:
+            # max value across scales
+            max_val = max_val_per_scale.max()
+            # scale with max value
+            max_scale = np.argmax(max_val_per_scale)
         # index of max value at that scale
         max_idx = np.argmax(mov_norm_sd_down[max_scale])
 
@@ -786,7 +832,7 @@ def sparsery(
         max_scale_per_roi[n] = max_scale
 
         # check if peak is larger than threshold * max(1,nbinned/1200)
-        if max_val < thresh_multiplier * thresh_peak:
+        if max_val < thresh_peak:
             break
 
         # downsampled position of peak
@@ -833,7 +879,7 @@ def sparsery(
         for i in range(n_iter_refine):
             # extend mask based on mean activity in active frames
             ypix, xpix, lam = iter_extend(
-                ypix, xpix, mov_norm, Ly, Lx, active_frames)
+                ypix, xpix, mov_norm, Ly, Lx, active_frames, thresh_act_pix)
             
             save_array(f'roi_{n}/ypix_{i+1}.npy', ypix)
             save_array(f'roi_{n}/xpix_{i+1}.npy', xpix)
@@ -862,7 +908,7 @@ def sparsery(
             # only the component with higher variance explained
             lam, xp, active_frames = ipack
             roi_corr[active_frames] = xp
-            ix = lam > lam.max() / 5
+            ix = lam > (lam.max() * thresh_act_pix)
             xpix = xpix[ix]
             ypix = ypix[ix]
             lam = lam[ix]
@@ -912,7 +958,7 @@ def sparsery(
         stats.append({ # add to list of ROI stats
             "ypix": ypix.astype(int),
             "xpix": xpix.astype(int),
-            "lam": lam * mov_sd[ypix, xpix],
+            "lam": lam * mov_max_intensity if use_alt_norm else lam * mov_sd[ypix, xpix],
             "med": med,
             "footprint": max_scale_per_roi[n],
         })

@@ -163,6 +163,13 @@ def default_ops():
         "prctile_baseline": 8.,  # optional (whether to use a percentile baseline)
         "neucoeff": 0.7,  # neuropil coefficient
 
-        # wang lab
-        "save_roi_iterations": False, # if True, save ROI iteration info in save_path0
+        # wang lab (default settings do not change suite2p behavior)
+        "wang:save_roi_iterations": False, # if True, save ROI iteration info in save_path0
+        "wang:bin_size": 0, # If > 0, force binning by this many frames
+        "wang:thresh_act_pix": .2, # threshold based on lam max for selecting active pixels during ROI extension
+        "wang:high_pass_overlapping": False, # If True, use overlapping instead of non-overlapping mean for temporal high pass during sparsedetect
+        "wang:use_alt_norm": False, # use alternative normalzation for sparsedetect
+        "wang:width_max": 30, # only if use_alt_norm == True, width in frames for max filter
+        "wang:thresh_peak_default": None, # if not None, use this threshold for peak detection in sparsedetect (float >= 0)
+        "wang:downsample_scale": None, # if not None, use this downsampling scale for sparsedetect (int >= 0)
     }

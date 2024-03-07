@@ -147,9 +147,61 @@ def hp_gaussian_filter(mov: np.ndarray, width: int) -> np.ndarray:
     return mov
 
 
-def hp_rolling_mean_filter(mov: np.ndarray, width: int) -> np.ndarray:
+def hp_rolling_mean_filter(mov: np.ndarray, width: int, use_overlapping: bool = False) -> np.ndarray:
     """
-    Returns a high-pass-filtered copy of the 3D array "mov" using a non-overlapping rolling mean kernel over time.
+    Returns a high-pass-filtered copy of the 3D array "mov" using a rolling mean kernel over time.
+
+    Parameters
+    ----------
+    mov: nImg x Ly x Lx
+        The frames to filter
+    width: int
+        The filter width
+    use_overlapping: bool, default False
+        If True, use overlapping windows
+
+    Returns
+    -------
+    filtered_mov: nImg x Ly x Lx
+        The filtered frames
+
+    """
+    mov = mov.copy()
+    if use_overlapping:
+        for i in range(mov.shape[0]):
+            mov[i, :, :] -= mov[i:i + width, :, :].mean(axis=0)
+    else:
+        for i in range(0, mov.shape[0], width):
+            mov[i:i + width, :, :] -= mov[i:i + width, :, :].mean(axis=0)
+    return mov
+
+
+def temporal_high_pass_filter(mov: np.ndarray, width: int, use_overlapping: bool = False) -> np.ndarray:
+    """
+    Returns hp-filtered mov over time, selecting an algorithm for computational performance based on the kernel width.
+
+    Parameters
+    ----------
+    mov: nImg x Ly x Lx
+        The frames to filter
+    width: int
+        The filter width
+    use_overlapping: bool, default False
+        If True, use overlapping instead of non-overlapping rolling mean
+        Note that this only takes effect if width > 10
+
+    Returns
+    -------
+    filtered_mov: nImg x Ly x Lx
+        The filtered frames
+    """
+
+    return hp_gaussian_filter(mov, width) if width < 10 else hp_rolling_mean_filter(
+        mov, width, use_overlapping)  # gaussian is slower
+
+def max_filter(mov: np.ndarray, width: int) -> np.ndarray:
+    """
+    Returns a filtered copy of the 3D array "mov" using a rolling max kernel over time.
 
     Parameters
     ----------
@@ -165,31 +217,9 @@ def hp_rolling_mean_filter(mov: np.ndarray, width: int) -> np.ndarray:
 
     """
     mov = mov.copy()
-    for i in range(0, mov.shape[0], width):
-        mov[i:i + width, :, :] -= mov[i:i + width, :, :].mean(axis=0)
+    for i in range(mov.shape[0]):
+        mov[i, :, :] = mov[i:i + width, :, :].max(axis=0)
     return mov
-
-
-def temporal_high_pass_filter(mov: np.ndarray, width: int) -> np.ndarray:
-    """
-    Returns hp-filtered mov over time, selecting an algorithm for computational performance based on the kernel width.
-
-    Parameters
-    ----------
-    mov: nImg x Ly x Lx
-        The frames to filter
-    width: int
-        The filter width
-
-    Returns
-    -------
-    filtered_mov: nImg x Ly x Lx
-        The filtered frames
-    """
-
-    return hp_gaussian_filter(mov, width) if width < 10 else hp_rolling_mean_filter(
-        mov, width)  # gaussian is slower
-
 
 def standard_deviation_over_time(mov: np.ndarray, batch_size: int) -> np.ndarray:
     """
