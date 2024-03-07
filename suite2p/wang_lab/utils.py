@@ -47,20 +47,32 @@ def plot_processing_steps(p_out, cmap = 'viridis', path=''):
         img = post_processing_suite2p_gui(np.load(p_out / f'{m}_img_hp.npy'))
         ax.imshow(img, cmap=cmap)
 
-        ax = axarr[2]
-        ax.set_title('standard deviation')
-        img = post_processing_suite2p_gui(np.load(p_out / f'img_hp_sd.npy'))
-        ax.imshow(img, cmap=cmap)
+        if (p_out / f'img_hp_sd.npy').exists():
+            ax = axarr[2]
+            ax.set_title('standard deviation')
+            img = post_processing_suite2p_gui(np.load(p_out / f'img_hp_sd.npy'))
+            ax.imshow(img, cmap=cmap)
 
-        ax = axarr[3]
-        ax.set_title('norm by SD')
-        img = post_processing_suite2p_gui(np.load(p_out / f'{m}_norm.npy'))
-        ax.imshow(img, cmap=cmap)
+            ax = axarr[3]
+            ax.set_title('norm by SD')
+            img = post_processing_suite2p_gui(np.load(p_out / f'{m}_norm.npy'))
+            ax.imshow(img, cmap=cmap)
 
-        ax = axarr[4]
-        ax.set_title('norm + spatial LP')
-        img = post_processing_suite2p_gui(np.load(p_out / f'{m}_norm_lp.npy'))
-        ax.imshow(img, cmap=cmap)
+            ax = axarr[4]
+            ax.set_title('norm + spatial LP')
+            img = post_processing_suite2p_gui(np.load(p_out / f'{m}_norm_lp.npy'))
+            ax.imshow(img, cmap=cmap)
+        
+        else: # alternative detection
+            ax = axarr[2]
+            ax.set_title('after rolling max')
+            img = post_processing_suite2p_gui(np.load(p_out / f'{m}_img_hp_rmax.npy'))
+            ax.imshow(img, cmap=cmap)
+
+            ax = axarr[3]
+            ax.set_title('after neuropil subtraction')
+            img = post_processing_suite2p_gui(np.load(p_out / f'{m}_lp.npy'))
+            ax.imshow(img, cmap=cmap)
 
     for ax in axmat.flatten():
         ax.axis('off')
@@ -119,10 +131,15 @@ def plot_roi_iter(p_out, n_roi, zoom_border=10, color='C3', cmap1='viridis', cma
         
     # plot lam * SD (lam in stat.npy is lam*SD) 
     ax = axmat[1, -1]
-    ax.set_title('lam * SD')
     r = plane.copy()
-    img_sd = np.load(p_out / 'img_hp_sd.npy')
-    r[ypix, xpix, -1] = norm(lam * img_sd[ypix, xpix])
+    p_sd = p_out / 'img_hp_sd.npy'
+    if p_sd.exists():
+        ax.set_title('lam * SD')
+        img_sd = np.load(p_sd)
+        r[ypix, xpix, -1] = norm(lam * img_sd[ypix, xpix])
+    else: # alternative detection
+        ax.set_title('lam')
+        r[ypix, xpix, -1] = norm(lam)
     ax.imshow(r)
 
     # zoom in on all but first

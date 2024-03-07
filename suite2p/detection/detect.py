@@ -129,8 +129,11 @@ def detection_wrapper(f_reg, mov=None, yrange=None, xrange=None, ops=default_ops
     ops["xrange"] = xrange
 
     if mov is None:
-        bin_size = int(
-            max(1, n_frames // ops["nbinned"], np.round(ops["tau"] * ops["fs"])))
+        if ops["wang:bin_size"] > 0:
+            bin_size = ops["wang:bin_size"]
+        else:
+            bin_size = int(
+                max(1, n_frames // ops["nbinned"], np.round(ops["tau"] * ops["fs"])))
         print("Binning movie in chunks of length %2.2d" % bin_size)
         mov = bin_movie(f_reg, bin_size, yrange=yrange, xrange=xrange,
                         badframes=ops.get("badframes", None))
@@ -238,7 +241,13 @@ def select_rois(ops: Dict[str, Any], mov: np.ndarray, sparse_mode: bool = True):
             threshold_scaling=ops["threshold_scaling"],
             max_iterations=250 * ops["max_iterations"],
             percentile=ops.get("active_percentile", 0.0),
-            save_path=ops['save_path0'] if ops['save_roi_iterations'] else ''
+            save_path=ops['save_path0'] if ops['wang:save_roi_iterations'] else '',
+            use_overlapping=ops["wang:high_pass_overlapping"],
+            use_alt_norm=ops["wang:use_alt_norm"],
+            width_max=ops["wang:width_max"],
+            thresh_peak_default=ops["wang:thresh_peak_default"],
+            thresh_act_pix=ops["wang:thresh_act_pix"],
+            downsample_scale=ops["wang:downsample_scale"],
         )
         ops.update(new_ops)
     else:
