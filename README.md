@@ -11,7 +11,9 @@ Changes in the current repo are not meant to be merged upstream.
 Additional workflows are collected in the [`wang_lab`](./wang_lab/) folder (see script files for details):
 |script file|use case|
 |---|---|
+|[`run_without_gui.py`](./wang_lab/run_without_gui.py)| run suite2p from python scripts or jupyter notebooks |
 |[`plot_roi_iterations.py`](./wang_lab/plot_roi_iterations.py)| save intermediate steps of ROI detection in the sparsery algorithm |
+|[`alternative_detection.py`](./wang_lab/alternative_detection.py)| alternative ROI detection within the sparsery algorithm |
 
 ## Installation
 ```
