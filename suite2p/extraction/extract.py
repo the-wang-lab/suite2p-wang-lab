@@ -90,14 +90,17 @@ def extract_traces(f_in, cell_masks, neuropil_masks, batch_size=500):
     else:
         neuropil_ipix = None
 
+    f_in_ = f_in.copy()
     ix = 0
     for k in np.arange(0, n_frames, batch_size):
         data = f_in[k:min(k + batch_size, n_frames)].astype("float32")
+        data_ = f_in_[k:min(k + batch_size, n_frames)].astype("float32")
         nimg = data.shape[0]
         if nimg == 0:
             break
         inds = ix + np.arange(0, nimg, 1, int)
         data = np.reshape(data, (nimg, -1)).astype(np.float32)
+        data_ = np.reshape(data_, (nimg, -1)).astype(np.float32)
         Fi = np.zeros((ncells, data.shape[0]), np.float32)
 
         # extract traces and neuropil
@@ -108,9 +111,9 @@ def extract_traces(f_in, cell_masks, neuropil_masks, batch_size=500):
         #Fneu[:,inds] = np.dot(neuropil_masks , data.T)
 
         # WITH NUMBA
-        F[:, inds] = matmul_traces(Fi, data, cell_ipix, cell_lam)
+        F[:, inds] = matmul_traces(Fi, data, data_, cell_ipix, cell_lam)
         if neuropil_ipix is not None:
-            Fneu[:, inds] = matmul_neuropil(Fi, data, neuropil_ipix, neuropil_npix)
+            Fneu[:, inds] = matmul_neuropil(Fi, data, data_, neuropil_ipix, neuropil_npix)
 
         ix += nimg
     print("Extracted fluorescence from %d ROIs in %d frames, %0.2f sec." %
@@ -119,18 +122,20 @@ def extract_traces(f_in, cell_masks, neuropil_masks, batch_size=500):
 
 
 @njit(parallel=True)
-def matmul_traces(Fi, data, cell_ipix, cell_lam):
+def matmul_traces(Fi, data, data_, cell_ipix, cell_lam):
     ncells = Fi.shape[0]
     for n in prange(ncells):
         Fi[n] = np.dot(data[:, cell_ipix[n]], cell_lam[n])
+        data_[:, cell_ipix[n]] -= Fi[n]
     return Fi
 
 
 @njit(parallel=True)
-def matmul_neuropil(Fi, data, neuropil_ipix, neuropil_npix):
+def matmul_neuropil(Fi, data, data_, neuropil_ipix, neuropil_npix):
     ncells = Fi.shape[0]
     for n in prange(ncells):
         Fi[n] = data[:, neuropil_ipix[n]].sum(axis=1) / neuropil_npix[n]
+        # data_[:, neuropil_ipix[n]] -= Fi[n]
     return Fi
 
 

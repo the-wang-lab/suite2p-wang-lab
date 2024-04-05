@@ -966,6 +966,9 @@ def sparsery(
         if n % 1000 == 0:
             print("%d ROIs, score=%2.2f" % (n, max_val))
 
+    # save movie with activity removed
+    save_array(f'mov_norm_after_detection.npy', mov_norm)
+
     new_ops.update({ # new items to be added to ops
         "Vmax": max_val_per_roi,
         "ihop": max_scale_per_roi,
