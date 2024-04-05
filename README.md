@@ -14,6 +14,7 @@ Additional workflows are collected in the [`wang_lab`](./wang_lab/) folder (see 
 |[`run_without_gui.py`](./wang_lab/run_without_gui.py)| run suite2p from python scripts or jupyter notebooks |
 |[`plot_roi_iterations.py`](./wang_lab/plot_roi_iterations.py)| save intermediate steps of ROI detection in the sparsery algorithm |
 |[`alternative_detection.py`](./wang_lab/alternative_detection.py)| alternative ROI detection within the sparsery algorithm |
+|[`data_structure.md`](./wang_lab/data_structure.md)| Documentation of the merged behavior and imaging data structure |
 
 ## Installation
 ```
