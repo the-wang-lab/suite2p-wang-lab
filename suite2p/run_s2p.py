@@ -167,8 +167,12 @@ def pipeline(f_reg, f_raw=None, f_reg_chan2=None, f_raw_chan2=None,
         ######## CELL DETECTION ##############
         t11 = time.time()
         print("----------- ROI DETECTION")
+        if ops['wang:movie_chunk']>0:
+            frames = ops['wang:movie_chunk']
+            print('use movie chunk of first %d frames for roi detection...' % frames)
+            f_reg_detect = f_reg[:frames, :, :]
         if stat is None:
-            ops, stat = detection.detection_wrapper(f_reg, ops=ops, classfile=classfile)
+            ops, stat = detection.detection_wrapper(f_reg=f_reg_detect, ops=ops, classfile=classfile)
         plane_times["detection"] = time.time() - t11
         print("----------- Total %0.2f sec." % plane_times["detection"])
 

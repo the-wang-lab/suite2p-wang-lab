@@ -164,12 +164,18 @@ def default_ops():
         "neucoeff": 0.7,  # neuropil coefficient
 
         # wang lab (default settings do not change suite2p behavior)
+        "wang:save_path_sparsedetect": None, # path to save masks and quality control images used during ROI iterations in sparsedetect
+        "wang:rolling_bin": 'max', # Which method to use in sparsedetect rolling binning, 'max' for max projection, 'mean' for mean projection
         "wang:save_roi_iterations": False, # if True, save ROI iteration info in save_path0
         "wang:bin_size": 0, # If > 0, force binning by this many frames
         "wang:thresh_act_pix": .2, # threshold based on lam max for selecting active pixels during ROI extension
         "wang:high_pass_overlapping": False, # If True, use overlapping instead of non-overlapping mean for temporal high pass during sparsedetect
         "wang:use_alt_norm": False, # use alternative normalzation for sparsedetect
-        "wang:width_max": 30, # only if use_alt_norm == True, width in frames for max filter
+        'wang:norm_method':'max', # In sparsedetect, choose which method to use for movie normalization, if 'max', movie is normalized by max projection; if 'max-min', mov_norm = (mov-mov.min)/(mov.max-mov-min)
+        "wang:rolling_width": 30, # only if use_alt_norm == True, width in frames for max or mean filter
         "wang:thresh_peak_default": None, # if not None, use this threshold for peak detection in sparsedetect (float >= 0)
         "wang:downsample_scale": None, # if not None, use this downsampling scale for sparsedetect (int >= 0)
+        'wang:movie_chunk': 0, #whetehr to use movie chunk for ROI detection, if >0, indicates the number of frames used for ROI detection
+        "wang:neuropil_lam": False,  # If true, in sparsedetect generate neuropil mask and calculate neuropil lam
+        
     }

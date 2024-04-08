@@ -15,6 +15,10 @@ from pathlib import Path
 
 from . import utils
 
+from suite2p.extraction import masks
+from suite2p.detection.stats import ROI
+
+
 
 def neuropil_subtraction(mov: np.ndarray, filter_size: int) -> None:
     '''Apply spatial low-pass filter to help ignore neuropil
@@ -581,8 +585,18 @@ def sparsery(
     use_alt_norm: bool,
     thresh_peak_default,
     thresh_act_pix: float,
-    width_max: int,
+    width: int,
     downsample_scale,
+    rolling: str,
+    neuropil_lam: bool,
+    norm: str,
+    lam_percentile: float,
+    inner_neuropil_radius: int,
+    min_neuropil_pixels: int,
+    circular: bool,
+    aspect: bool,
+    diameter: int,
+    do_crop: bool,   
     percentile=0., # TODO add to documentation (docs/settings.rst)
     n_scales=5,
     n_iter_refine=3,
@@ -675,8 +689,8 @@ def sparsery(
         If not None, use this as the threshold for `thresh_peak` instead of the value calculated in `set_scale_and_thresholds`
     thresh_act_pix : float
         Threshold for active pixels as fraction of max lam value
-    width_max : int
-        Width of max filter in bins, only used if `use_alt_norm` is True
+    width : int
+        Width of max or mean filter in bins, only used if `use_alt_norm` is True
     downsample_scale : int or None
         If not None, always look for ROI peaks at this spatial scale (0 is the original scale)
     percentile : float, optional
@@ -689,7 +703,30 @@ def sparsery(
         Threshold for variance explained ratio to split ROI, by default 1.25
     save_path : str, optional
         If not empty, save masks and quality control images used during ROI iterations, by default ""
+    rolling : str
+        Choose which method to use for rolling binning, 'max' for max projection, 'mean' for mean projection
+    norm : str 
+        Choose which method to use for movie normalization, if 'max', movie is normalized by max projection; if 'max-min', mov_norm = (mov-mov.min)/(mov.max-mov-min)
     
+        ----------following parameters are used for generating neuropil mask and calculate neuropil lam---------
+
+    neuropil_lam : bool
+        If true, in sparsedetect generate neuropil mask and calculate neuropil lam
+    lam_percentile: int, default: 50
+        Percentile of Lambda within area to ignore when excluding cell pixels for neuropil extraction
+    inner_neuropil_radius : int, default: 2
+        Number of pixels to keep between ROI and neuropil donut
+    min_neuropil_pixels : int, default: 350
+        Minimum number of pixels used to compute neuropil for each cell
+    circular : bool, default: Flase
+        Whetehr to expend neuropil in circular manner
+    aspect : float, default: 1.0
+        Ratio of um/pixels in X to um/pixels in Y (ONLY for correct aspect ratio in GUI, not used for other processing)
+    diameter : int, default: 0
+        Diameter that will be used for cellpose. If set to zero, diameter is estimated.
+    do_crop = bool, default: True
+        Specifies whether to crop dendrites for cell classification stats
+
     Returns
     -------
     new_ops : dict
@@ -715,6 +752,8 @@ def sparsery(
 
     ###############
     # Preprocessing
+    # save_array("mov_intosparsery.npy", mov)
+    
     save_array("mean_img.npy", mov.mean(axis=0))
     save_array("max_img.npy", mov.max(axis=0))
 
@@ -724,11 +763,14 @@ def sparsery(
     save_array("mean_img_hp.npy", mov.mean(axis=0))
     save_array("max_img_hp.npy", mov.max(axis=0))
 
-    if use_alt_norm:
-        print('INFO using alternative normalization method')
 
-        # rolling max filter  
-        mov = utils.max_filter(mov=mov, width=int(width_max))
+    if use_alt_norm:
+        # rolling max filter:
+        if rolling == 'max':
+            mov = utils.max_filter(mov=mov, width=int(width))
+        if rolling == 'mean':
+            mov = utils.mean_filter(mov=mov, width=int(width))
+        # save_array("rolling_bin.npy", mov)
         save_array("mean_img_hp_rmax.npy", mov.mean(axis=0))
         save_array("max_img_hp_rmax.npy", mov.max(axis=0))
 
@@ -739,10 +781,19 @@ def sparsery(
         save_array("max_lp.npy", mov.max(axis=0))
 
         # normalization 
-        # Find the maximum pixel intensity across the entire image stack
-        mov_max_intensity = np.max(mov)
-        # Normalize each image by the maximum intensity
-        mov_norm = mov / mov_max_intensity
+        if norm == 'max':
+            # Find the maximum pixel intensity across the entire image stack
+            mov_max_intensity = np.max(mov)
+            # Normalize each image by the maximum intensity
+            mov_norm = mov / mov_max_intensity
+        elif norm == 'max-min':
+            mov_norm = (mov-np.min(mov))/(np.max(mov)-np.min(mov)) #new normalization - Jingyu 3/28/2024
+        
+        # save_array("mov_max_intensity", mov_max_intensity)
+        # save_array("mov_norm.npy", mov_norm)
+        save_array("mean_norm.npy", mov_norm.mean(axis=0))
+        save_array("max_norm.npy", mov_norm.max(axis=0))
+                    
     else:
         # normalize by standard deviation
         mov_sd = utils.standard_deviation_over_time(mov, batch_size=batch_size)
@@ -876,6 +927,7 @@ def sparsery(
 
         ############
         # EXTEND ROI
+        active_frames_rec = []
         for i in range(n_iter_refine):
             # extend mask based on mean activity in active frames
             ypix, xpix, lam = iter_extend(
@@ -891,13 +943,17 @@ def sparsery(
             roi_corr = mov_norm_roi @ lam
             # reselect active frames
             active_frames = np.flatnonzero(roi_corr > thresh_active)
-
+            
+            active_frames_rec.append(active_frames)
             if not active_frames.size:  # stop ROI extension if no active frames
                 break
-
+            
         if not active_frames.size:  # stop ROI detection if no active frames
             break
-
+        
+        #save index of active frames
+        act_frames = active_frames_rec[-1]
+        
         ###########
         # SPLIT ROI
         
@@ -954,17 +1010,76 @@ def sparsery(
             Mx = mov_norm_d[:, xpix_d + Lx_d * ypix_d]
             x = (Mx**2 * (Mx > thresh_active)).sum(axis=0) ** 0.5
             mov_norm_sd_d[ypix_d, xpix_d] = x
-
+        
         stats.append({ # add to list of ROI stats
             "ypix": ypix.astype(int),
             "xpix": xpix.astype(int),
-            "lam": lam * mov_max_intensity if use_alt_norm else lam * mov_sd[ypix, xpix],
+            "lam": lam if use_alt_norm else lam * mov_sd[ypix, xpix],
             "med": med,
             "footprint": max_scale_per_roi[n],
+            "act_frames": act_frames
         })
-
+    
         if n % 1000 == 0:
             print("%d ROIs, score=%2.2f" % (n, max_val))
+        
+    if neuropil_lam:
+        print('***neuropil_lam=True, calculating neuropil_lam...***')
+        
+        d0 = 10 if diameter is None or (isinstance(diameter, int) and
+                                    diameter == 0) else diameter
+        if aspect is not None:
+            diameter = int(d0[0]) if isinstance(d0, (list, np.ndarray)) else int(d0)
+            dy, dx = int(aspect * diameter), diameter
+        else:
+            dy, dx = (int(d0),
+                      int(d0)) if not isinstance(d0, (list, np.ndarray)) else (int(d0[0]),
+                                                                               int(d0[0]))
+        rois = [
+        ROI(ypix=s["ypix"], xpix=s["xpix"], lam=s["lam"], med=s["med"], do_crop=do_crop)
+        for s in stats
+        ]
+        for roi, s in zip(rois, stats):
+            ellipse = roi.fit_ellipse(dy, dx)
+            s["npix"] = roi.n_pixels
+            s["radius"] = ellipse.radius
+        
+        cell_pix = masks.create_cell_pix(stats, Ly=Ly, Lx=Lx,
+                                   lam_percentile=lam_percentile)
+        neuropil_masks = masks.create_neuropil_masks(ypixs=[stat["ypix"] for stat in stats],
+                                    xpixs=[stat["xpix"] for stat in stats], cell_pix=cell_pix,
+                                    inner_neuropil_radius = inner_neuropil_radius,
+                                    min_neuropil_pixels = min_neuropil_pixels, circular=circular)
+        
+        for k in range(len(stats)):
+            stats[k]["neuropil_mask"] = neuropil_masks[k]
+        
+        for stat in stats:
+            act_frames = stat['act_frames']
+            mov_act = mov_norm[act_frames]
+            neuropil = np.unravel_index(stat['neuropil_mask'], (Ly,Lx))
+            ypix_neu = neuropil[0]
+            xpix_neu = neuropil[1]
+            # npix = len(neuropil[1])
+            roi_act = mov_act[:, ypix_neu * Lx + xpix_neu]
+            lam = roi_act.mean(axis=0)
+            lam = lam / np.sum(lam**2) ** 0.5
+            stat['lam_neu'] = lam
+            lam, neuropil_mask = zip(*sorted(zip(stat['lam_neu'], stat['neuropil_mask']), reverse=True)[:stat['npix']])
+            lam = np.asarray(lam)
+            stat['neuropil_mask'] = np.asarray(neuropil_mask)
+            
+            if norm == 'max': 
+                lam_normed = (lam-lam.min())/(lam.max()-lam.min()) #normalization to scale lam > 0          
+                stat['lam_neu'] = np.asarray(lam_normed)
+            
+            else:
+                stat['lam_neu'] = lam
+                
+    
+    else:
+        print('***neuropil_lam=False***')
+
 
     new_ops.update({ # new items to be added to ops
         "Vmax": max_val_per_roi,
