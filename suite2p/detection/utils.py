@@ -221,6 +221,28 @@ def max_filter(mov: np.ndarray, width: int) -> np.ndarray:
         mov[i, :, :] = mov[i:i + width, :, :].max(axis=0)
     return mov
 
+def mean_filter(mov: np.ndarray, width: int) -> np.ndarray:
+    """
+    Returns a filtered copy of the 3D array "mov" using a rolling mean kernel over time.
+
+    Parameters
+    ----------
+    mov: nImg x Ly x Lx
+        The frames to filter
+    width: int
+        The filter width
+
+    Returns
+    -------
+    filtered_mov: nImg x Ly x Lx
+        The filtered frames
+
+    """
+    mov = mov.copy()
+    for i in range(mov.shape[0]):
+        mov[i, :, :] = mov[i:i + width, :, :].mean(axis=0)
+    return mov
+
 def standard_deviation_over_time(mov: np.ndarray, batch_size: int) -> np.ndarray:
     """
     Returns standard deviation of difference between pixels across time, computed in batches of batch_size.

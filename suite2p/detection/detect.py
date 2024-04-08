@@ -241,13 +241,23 @@ def select_rois(ops: Dict[str, Any], mov: np.ndarray, sparse_mode: bool = True):
             threshold_scaling=ops["threshold_scaling"],
             max_iterations=250 * ops["max_iterations"],
             percentile=ops.get("active_percentile", 0.0),
-            save_path=ops['save_path0'] if ops['wang:save_roi_iterations'] else '',
+            save_path=ops['wang:save_path_sparsedetect'] if ops['wang:save_roi_iterations'] else '',
             use_overlapping=ops["wang:high_pass_overlapping"],
             use_alt_norm=ops["wang:use_alt_norm"],
-            width_max=ops["wang:width_max"],
+            width=ops["wang:rolling_width"],
             thresh_peak_default=ops["wang:thresh_peak_default"],
             thresh_act_pix=ops["wang:thresh_act_pix"],
             downsample_scale=ops["wang:downsample_scale"],
+            rolling = ops["wang:rolling_bin"],
+            neuropil_lam = ops["wang:neuropil_lam"],
+            norm = ops['wang:norm_method'],
+            lam_percentile=ops.get("lam_percentile", 50.0),           
+            inner_neuropil_radius = ops["inner_neuropil_radius"],
+            min_neuropil_pixels=ops["min_neuropil_pixels"],
+            circular=ops.get("circular_neuropil", False),
+            aspect = ops.get("aspect", None),
+            diameter = ops.get("diameter", None),
+            do_crop = ops.get("soma_crop", 1)
         )
         ops.update(new_ops)
     else:

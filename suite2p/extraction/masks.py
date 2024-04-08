@@ -9,7 +9,6 @@ from scipy.ndimage import percentile_filter
 from ..detection.sparsedetect import extendROI
 from .. import default_ops
 
-
 def create_masks(stats: List[Dict[str, Any]], Ly, Lx, ops=default_ops()):
     """ create cell and neuropil masks """
 
@@ -20,15 +19,27 @@ def create_masks(stats: List[Dict[str, Any]], Ly, Lx, ops=default_ops()):
         for stat in stats
     ]
     if ops.get("neuropil_extract", True):
-        neuropil_masks = create_neuropil_masks(
-            ypixs=[stat["ypix"] for stat in stats],
-            xpixs=[stat["xpix"] for stat in stats], cell_pix=cell_pix,
-            inner_neuropil_radius=ops["inner_neuropil_radius"],
-            min_neuropil_pixels=ops["min_neuropil_pixels"],
-            circular=ops.get("circular_neuropil", False))
+        if ops["wang:neuropil_lam"]:
+        # if 'neuropil_mask' in stats[0]: # check if neuropil mask is already generated during ROI detection
+            neuropil_masks = [stat["neuropil_mask"] for stat in stats] # neuropil mask is already generated during ROI detection
+            neuropil_lam = []
+            for stat in stats:
+                lam = stat['lam_neu']
+                # lam_normed = (lam-lam.min())/(lam.max()-lam.min())
+                lam_normed = (lam/lam.sum()).astype('float32')
+                neuropil_lam.append(lam_normed)            
+        else:
+            neuropil_lam = None
+            neuropil_masks = create_neuropil_masks(
+                ypixs=[stat["ypix"] for stat in stats],
+                xpixs=[stat["xpix"] for stat in stats], cell_pix=cell_pix,
+                inner_neuropil_radius=ops["inner_neuropil_radius"],
+                min_neuropil_pixels=ops["min_neuropil_pixels"],
+                circular=ops.get("circular_neuropil", False))
     else:
-        neuropil_masks = None
-    return cell_masks, neuropil_masks
+        neuropil_masks = None       
+    
+    return cell_masks, neuropil_masks, neuropil_lam
 
 
 def create_cell_pix(stats: List[Dict[str, Any]], Ly: int, Lx: int,
