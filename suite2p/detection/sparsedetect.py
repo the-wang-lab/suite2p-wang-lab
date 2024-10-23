@@ -19,14 +19,12 @@ from suite2p.extraction import masks
 from suite2p.detection.stats import ROI
 
 
-
-def neuropil_subtraction(mov: np.ndarray, filter_size: int) -> None:
+def neuropil_subtraction(mov: np.ndarray, filter_size: int) -> np.ndarray:
     '''Apply spatial low-pass filter to help ignore neuropil
     
     The uniform filter of size "filter_size" is applied to each frame
     and divided by the a 2D plane of ones with feathered edges.
     This is then subtracted from the original frame. 
-    
 
     Parameters
     ----------
@@ -69,7 +67,7 @@ def square_convolution_2d(mov: np.ndarray, filter_size: int) -> np.ndarray:
     mov_out = np.zeros_like(mov, dtype=np.float32)
     for frame_old, frame_new in zip(mov, mov_out):
         frame_filt = filter_size * \
-            uniform_filter(frame_old, size=filter_size, mode="constant")
+                     uniform_filter(frame_old, size=filter_size, mode="constant")
         frame_new[:] = frame_filt
     return mov_out
 
@@ -167,7 +165,7 @@ def add_square(yi, xi, lx, Ly, Lx):
     return y0, x0, mask
 
 
-def iter_extend(ypix, xpix, mov, Lyc, Lxc, active_frames, thresh_active):
+def iter_extend(ypix, xpix, mov, Lyc, Lxc, active_frames, thresh_active, is_const_thresh):
     """extend mask based on activity of pixels on active frames
     ACTIVE frames determined by threshold
 
@@ -185,6 +183,13 @@ def iter_extend(ypix, xpix, mov, Lyc, Lxc, active_frames, thresh_active):
 
     active_frames : 1D array
         list of active frames
+
+    thresh_active: float
+        lower bound threshold for ROI extension, when is_const_thresh is true
+        lower bound factor for ROI extension (x lam.max() to get the lower bound threshold), when is_const_thresh is false
+
+    is_const_thresh: bool
+        set thresh_active depending on is_const_thresh
 
     Returns
     ----------------
@@ -211,7 +216,11 @@ def iter_extend(ypix, xpix, mov, Lyc, Lxc, active_frames, thresh_active):
         lam = roi_act.mean(axis=0)
 
         # select active pixels
-        thresh_lam = max(0, lam.max()) * thresh_active
+        if is_const_thresh:
+            thresh_lam = max(0, thresh_active)  # set constant threshold regardless of the peak lam value
+        else:
+            thresh_lam = max(0, lam.max()) * thresh_active
+
         pix_act = lam > thresh_lam
 
         if not np.any(pix_act):  # stop if no pixels are active
@@ -223,11 +232,11 @@ def iter_extend(ypix, xpix, mov, Lyc, Lxc, active_frames, thresh_active):
         if npix_new <= npix_old:  # stop if no pixels were added
             break
 
-        if npix_new >= 10000:  # stop if too many pixels
+        if npix_new >= 400:  # stop if too many pixels, original 10000
             break
 
     # normalize by standard deviation
-    lam = lam / np.sum(lam**2) ** 0.5
+    lam = lam / np.sum(lam ** 2) ** 0.5
 
     return ypix, xpix, lam
 
@@ -300,7 +309,7 @@ def two_comps(mpix0, lam, Th2):
     gf0 = xproj > Th2
 
     mpix[gf0, :] -= np.outer(xproj[gf0], lam)
-    vexp0 = np.sum(mpix0**2) - np.sum(mpix**2)
+    vexp0 = np.sum(mpix0 ** 2) - np.sum(mpix ** 2)
 
     k = np.argmax(np.sum(mpix * np.float32(mpix > 0), axis=1))
     mu = [lam * np.float32(mpix[k] < 0), lam * np.float32(mpix[k] > 0)]
@@ -324,7 +333,7 @@ def two_comps(mpix0, lam, Th2):
             mpix[goodframe[k], :] += np.outer(xproj[k], mu[k])
             xp = mpix @ mu[k]
             goodframe[k] = xp > Th2
-            V[k] = np.sum(xp**2)
+            V[k] = np.sum(xp ** 2)
             if np.sum(goodframe[k]) == 0:
                 flag[k] = True
                 V[k] = -1
@@ -336,7 +345,7 @@ def two_comps(mpix0, lam, Th2):
             mu[k] /= 1e-6 + np.sum(mu[k] ** 2) ** 0.5
             mpix[goodframe[k], :] -= np.outer(xproj[k], mu[k])
     k = np.argmax(V)
-    vexp = np.sum(mpix0**2) - np.sum(mpix**2)
+    vexp = np.sum(mpix0 ** 2) - np.sum(mpix ** 2)
     vrat = vexp / vexp0
     return vrat, (mu[k], xproj[k], goodframe[k])
 
@@ -361,7 +370,6 @@ def extend_mask(ypix, xpix, lam, Ly, Lx):
     ypix1, xpix1 = yu[:, ix]
     lam1 = LAM[ix]
     return ypix1, xpix1, lam1
-
 
 
 def estimate_spatial_scale(I: np.ndarray) -> int:
@@ -406,7 +414,7 @@ def find_best_scale(maxproj_splined: np.ndarray, spatial_scale: int, max_scale=4
     mode : str
         Estimation mode
     '''
-    modes = { # to mirror former Enum class
+    modes = {  # to mirror former Enum class
         'frc': "FORCED",
         'est': "estimated",
     }
@@ -427,7 +435,7 @@ def find_best_scale(maxproj_splined: np.ndarray, spatial_scale: int, max_scale=4
     return scale, mode
 
 
-def spatially_downsample(mov: np.ndarray, n_scales: int, filter_size=3) -> np.ndarray:
+def spatially_downsample(mov: np.ndarray, n_scales: int, filter_size=3):
     '''Downsample movie at multiple spatial scales
 
     Spatially downsample the movie `n_scales` times by a factor of 2.
@@ -516,7 +524,8 @@ def spline_over_scales(mov_down, grid_down):
 
 def scale_in_pixel(scale):
     "Convert scale integer to number of pixels"
-    return int(3 * 2**scale)
+    return int(3 * 2 ** scale)
+
 
 def set_scale_and_thresholds(mov_norm_down, grid_down, spatial_scale, threshold_scaling):
     '''Find best spatial scale and set thresholds for ROI detection
@@ -543,7 +552,7 @@ def set_scale_and_thresholds(mov_norm_down, grid_down, spatial_scale, threshold_
     vcorr : np.ndarray
         Correlation map
     '''
-    
+
     # spline approximation of max projection of downsampled movies
     maxproj_splined = spline_over_scales(mov_norm_down, grid_down)
     corr_map = maxproj_splined.max(axis=0)
@@ -552,7 +561,6 @@ def set_scale_and_thresholds(mov_norm_down, grid_down, spatial_scale, threshold_
     # TODO: scales from cellpose (?)
     #    scales = 3 * 2 ** np.arange(5.0)
     #    scale = np.argmin(np.abs(scales - diam))
-
 
     # define thresholds based on spatial scale
     scale_pix = scale_in_pixel(scale)
@@ -574,35 +582,36 @@ def set_scale_and_thresholds(mov_norm_down, grid_down, spatial_scale, threshold_
 
 
 def sparsery(
-    mov: np.ndarray,
-    high_pass: int,
-    neuropil_high_pass: int,
-    batch_size: int,
-    spatial_scale: int,
-    threshold_scaling: float,
-    max_iterations: int,
-    use_overlapping: bool,
-    use_alt_norm: bool,
-    thresh_peak_default,
-    thresh_act_pix: float,
-    width: int,
-    downsample_scale,
-    rolling: str,
-    neuropil_lam: bool,
-    norm: str,
-    lam_percentile: float,
-    inner_neuropil_radius: int,
-    min_neuropil_pixels: int,
-    circular: bool,
-    aspect: bool,
-    diameter: int,
-    do_crop: bool,   
-    percentile=0., # TODO add to documentation (docs/settings.rst)
-    n_scales=5,
-    n_iter_refine=3,
-    thresh_split=1.25,
-    # extract_patches=False, TODO patches and seeds are unused
-    save_path="",
+        mov: np.ndarray,
+        high_pass: int,
+        neuropil_high_pass: int,
+        batch_size: int,
+        spatial_scale: int,
+        threshold_scaling: float,
+        max_iterations: int,
+        use_overlapping: bool,
+        use_alt_norm: bool,
+        use_auto_thresh: bool,
+        thresh_peak_default,
+        thresh_act_pix: float,
+        thresh_peak_sd_down_scaling: float,
+        width: int,
+        rolling: str,
+        neuropil_lam: bool,
+        norm: str,
+        lam_percentile: float,
+        inner_neuropil_radius: int,
+        min_neuropil_pixels: int,
+        circular: bool,
+        aspect: bool,
+        diameter: int,
+        do_crop: bool,
+        percentile=0.,  # TODO add to documentation (docs/settings.rst)
+        n_scales=5,
+        n_iter_refine=3,
+        thresh_split=1.25,
+        # extract_patches=False, TODO patches and seeds are unused
+        save_path="",
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Algorithm for ROI detection if `sparse_mode` is True
     
@@ -674,6 +683,7 @@ def sparsery(
         Width of spatial low-pass filter in pixels
     batch_size : int    
         Frames in each bin
+        If use_auto_thresh is true, set it to 2
     spatial_scale : int
         If > 0, use this as the spatial scale, otherwise estimate it
     threshold_scaling : float
@@ -685,14 +695,18 @@ def sparsery(
         Behavior depends on `high_pass` value, see utils.temporal_high_pass_filter for details
     use_alt_norm : bool
         If True, use alternative normalization method (see code for detail)
+    use_auto_thresh : bool
+        If True, use automatically calculated threshold for ROI detection (see code for detail)
     thresh_peak_default : float or None
         If not None, use this as the threshold for `thresh_peak` instead of the value calculated in `set_scale_and_thresholds`
+        If None and use_auto_thresh is true, then calculate thresh_peak based on the intensity distribution of all the pixels
+    thresh_peak_sd_down_scaling: float
+        This is the scaling factor for the peak detection using using mean + thresh_peak_sd_down_scaling*sd of mov_norm_sd_down
+        -- the standard deviation of downsampled movie at the selected spatial scale
     thresh_act_pix : float
         Threshold for active pixels as fraction of max lam value
     width : int
         Width of max or mean filter in bins, only used if `use_alt_norm` is True
-    downsample_scale : int or None
-        If not None, always look for ROI peaks at this spatial scale (0 is the original scale)
     percentile : float, optional
         If > 0, use percentile as dynamic threshold for active frames, by default 0.
     n_scales : int, optional
@@ -706,7 +720,7 @@ def sparsery(
     rolling : str
         Choose which method to use for rolling binning, 'max' for max projection, 'mean' for mean projection
     norm : str 
-        Choose which method to use for movie normalization, if 'max', movie is normalized by max projection; if 'max-min', mov_norm = (mov-mov.min)/(mov.max-mov-min)
+        Choose which method to use for movie normalization, if 'max', movie is normalized by max projection; if 'sd', normalized by sd
     
         ----------following parameters are used for generating neuropil mask and calculate neuropil lam---------
 
@@ -734,6 +748,7 @@ def sparsery(
     stats : list
         List of dictionaries with statistics for each ROI        
     """
+
     new_ops = {}  # initialize new ops
 
     if save_path:
@@ -753,7 +768,7 @@ def sparsery(
     ###############
     # Preprocessing
     # save_array("mov_intosparsery.npy", mov)
-    
+
     save_array("mean_img.npy", mov.mean(axis=0))
     save_array("max_img.npy", mov.max(axis=0))
 
@@ -762,7 +777,6 @@ def sparsery(
     new_ops["max_proj"] = mov.max(axis=0)
     save_array("mean_img_hp.npy", mov.mean(axis=0))
     save_array("max_img_hp.npy", mov.max(axis=0))
-
 
     if use_alt_norm:
         # rolling max filter:
@@ -780,20 +794,23 @@ def sparsery(
         save_array("mean_lp.npy", mov.mean(axis=0))
         save_array("max_lp.npy", mov.max(axis=0))
 
-        # normalization 
-        if norm == 'max':
+        # normalization
+        if norm == 'max':  # do not use max-min for normalization, because it can move the mean value away from 0
             # Find the maximum pixel intensity across the entire image stack
             mov_max_intensity = np.max(mov)
+            mov_min_intensity = np.min(mov)
             # Normalize each image by the maximum intensity
-            mov_norm = mov / mov_max_intensity
-        elif norm == 'max-min':
-            mov_norm = (mov-np.min(mov))/(np.max(mov)-np.min(mov)) #new normalization - Jingyu 3/28/2024
-        
+            max_min_intensity = np.array([mov_max_intensity, np.abs(mov_min_intensity)])
+            mov_norm = mov / np.max(max_min_intensity)
+        else:  # default norm == 'sd'
+            # Normalize each pixel by the standard deviation over time
+            mov_sd_mov = utils.standard_deviation_over_time(mov, batch_size=2)
+            mov_norm = mov / mov_sd_mov
+
         # save_array("mov_max_intensity", mov_max_intensity)
         # save_array("mov_norm.npy", mov_norm)
         save_array("mean_norm.npy", mov_norm.mean(axis=0))
         save_array("max_norm.npy", mov_norm.max(axis=0))
-                    
     else:
         # normalize by standard deviation
         mov_sd = utils.standard_deviation_over_time(mov, batch_size=batch_size)
@@ -807,6 +824,24 @@ def sparsery(
             mov=mov_norm, filter_size=neuropil_high_pass)
         save_array("mean_norm_lp.npy", mov_norm.mean(axis=0))
         save_array("max_norm_lp.npy", mov_norm.max(axis=0))
+
+    # automatically choose thresh_peak_norm and thresh_act_pix based on the mean and sd of mov_norm
+    thresh_peak_norm = 0  # only used when use_auto_thresh is true
+    if use_auto_thresh:
+        # set batch_size to 2 for automatic threshold calculation
+        batch_size = 2
+        # calculate mean of mov_norm for each pixel
+        mov_mean = np.mean(mov_norm, axis=0)
+        # calculate mean of mov_norm across all the pixels
+        mean_mov_mean = np.mean(mov_mean)
+        # calculate standard deviation of mov_norm for each pixel
+        mov_sd1 = utils.standard_deviation_over_time(mov_norm, batch_size=batch_size)
+        # calculate mean of the standard deviation of all the pixels in mov_norm
+        mean_mov_sd = np.mean(mov_sd1)
+        # set a threshold for mov_norm, used in thresholding active frames
+        thresh_peak_norm = mean_mov_mean + 3 * mean_mov_sd
+        # set a threshold for the lower bound intensity of the ROI edges
+        thresh_act_pix = mean_mov_mean + threshold_scaling * mean_mov_sd
 
     # downsample movie at various spatial scales
     mov_norm_down, grid_down = spatially_downsample(
@@ -827,16 +862,42 @@ def sparsery(
     new_ops["Vcorr"] = vcorr
     new_ops["spatscale_pix"] = scale_pix
 
+    # recalculate the spatial_scale based on the scale_pix estimation
+    spatial_scale = int(scale_pix / 6)
+
+    # set thresh_peak for mov_norm_down of the selected spatial scale
+    thresh_peak_norm_down = 0  # only used when use_auto_thresh is true
+    if use_auto_thresh:
+        # calculate mean of mov_norm_down for each pixel for the selected spatial scale
+        mov_norm_down_mean = np.mean(mov_norm_down[spatial_scale, :, :], axis=0)
+        # calculate mean of mean_mov_down_mean across all the pixels
+        mean_mov_down_mean = np.mean(mov_norm_down_mean)
+        # calculate standard deviation of mov_norm_down for each pixel for the selected spatial scale
+        mov_norm_down_sd = utils.standard_deviation_over_time(mov_norm_down[spatial_scale], batch_size=batch_size)
+        # Calculate mean of the standard deviation of all the pixels in mov_norm_down for the selected spatial scale
+        mean_mov_down_sd = np.mean(mov_norm_down_sd)
+        # Set a threshold for mov_norm_down, used in threshold_reduce()
+        thresh_peak_norm_down = mean_mov_down_mean + 3 * mean_mov_down_sd
+
     ###############
     # ROI detection
 
     if thresh_peak_default is not None:
         thresh_peak = thresh_peak_default
 
-    # get standard deviation for pixels for all values > Th2
+    # get standard deviation for pixels for all values > thresh_peak for each down sampled movie
+    if use_auto_thresh:
+        thresh_peak = thresh_peak_norm_down
     mov_norm_sd_down = [
         utils.threshold_reduce(m, thresh_peak) for m in mov_norm_down
     ]
+
+    # automatically calculate the threshold for ROI peak location detection using mov_norm_sd_down
+    thresh_peak_sd_down = 0  # only used when use_auto_thresh is true
+    if use_auto_thresh:
+        thresh_peak_sd_down = np.mean(mov_norm_sd_down[spatial_scale]) + thresh_peak_sd_down_scaling \
+                              * np.std(mov_norm_sd_down[spatial_scale])
+
     # needed so that scipy.io.savemat doesn't fail in runpipeline with latest numpy (v1.24.3).
     # dtype="object" is needed to have numpy array with elements having diff sizes
     new_ops["Vmap"] = np.asanyarray(mov_norm_sd_down, dtype="object").copy()
@@ -867,9 +928,9 @@ def sparsery(
 
         # max value at each scale
         max_val_per_scale = np.array([m.max() for m in mov_norm_sd_down])
-        if downsample_scale is not None:
-            max_val = max_val_per_scale[downsample_scale]
-            max_scale = downsample_scale
+        if spatial_scale > 0:
+            max_val = max_val_per_scale[spatial_scale]
+            max_scale = spatial_scale
         else:
             # max value across scales
             max_val = max_val_per_scale.max()
@@ -883,8 +944,12 @@ def sparsery(
         max_scale_per_roi[n] = max_scale
 
         # check if peak is larger than threshold * max(1,nbinned/1200)
-        if max_val < thresh_peak:
-            break
+        if use_auto_thresh:
+            if max_val < thresh_peak_sd_down:
+                break
+        else:
+            if max_val < thresh_peak:
+                break
 
         # downsampled position of peak
         max_idx_y_down, max_idx_x_down = np.unravel_index(
@@ -910,10 +975,16 @@ def sparsery(
         roi_corr = (mov_norm[:, ypix * Lx + xpix] * lam[0]).sum(axis=-1)
 
         # threshold active frames based on percentile or fixed value
-        if percentile > 0:
-            thresh_active = min(thresh_peak, np.percentile(roi_corr, percentile))
+        if use_auto_thresh:
+            if percentile > 0:
+                thresh_active = min(thresh_peak_norm, np.percentile(roi_corr, percentile))
+            else:
+                thresh_active = thresh_peak_norm
         else:
-            thresh_active = thresh_peak
+            if percentile > 0:
+                thresh_active = min(thresh_peak, np.percentile(roi_corr, percentile))
+            else:
+                thresh_active = thresh_peak
         active_frames = np.flatnonzero(roi_corr > thresh_active)
 
         # if extract_patches: # get square around seed TODO unused
@@ -931,11 +1002,11 @@ def sparsery(
         for i in range(n_iter_refine):
             # extend mask based on mean activity in active frames
             ypix, xpix, lam = iter_extend(
-                ypix, xpix, mov_norm, Ly, Lx, active_frames, thresh_act_pix)
-            
-            save_array(f'roi_{n}/ypix_{i+1}.npy', ypix)
-            save_array(f'roi_{n}/xpix_{i+1}.npy', xpix)
-            save_array(f'roi_{n}/lam_{i+1}.npy', lam)
+                ypix, xpix, mov_norm, Ly, Lx, active_frames, thresh_act_pix, use_auto_thresh)
+
+            save_array(f'roi_{n}/ypix_{i + 1}.npy', ypix)
+            save_array(f'roi_{n}/xpix_{i + 1}.npy', xpix)
+            save_array(f'roi_{n}/lam_{i + 1}.npy', lam)
 
             # select pixels in ROI
             mov_norm_roi = mov_norm[:, ypix * Lx + xpix]
@@ -943,37 +1014,40 @@ def sparsery(
             roi_corr = mov_norm_roi @ lam
             # reselect active frames
             active_frames = np.flatnonzero(roi_corr > thresh_active)
-            
+
             active_frames_rec.append(active_frames)
             if not active_frames.size:  # stop ROI extension if no active frames
                 break
-            
+
         if not active_frames.size:  # stop ROI detection if no active frames
             break
-        
-        #save index of active frames
+
+        # save index of active frames
         act_frames = active_frames_rec[-1]
-        
+
         ###########
         # SPLIT ROI
-        
-        # check if splitting ROI increases variance explained
-        ratio_vexp_split[n], ipack = two_comps(mov_norm_roi, lam, thresh_active)
-        if ratio_vexp_split[n] > thresh_split:
-            # if greater than threshold, update ROI to include 
-            # only the component with higher variance explained
-            lam, xp, active_frames = ipack
-            roi_corr[active_frames] = xp
-            ix = lam > (lam.max() * thresh_act_pix)
-            xpix = xpix[ix]
-            ypix = ypix[ix]
-            lam = lam[ix]
 
-            # determine med for new ROI
-            ymed = np.median(ypix)
-            xmed = np.median(xpix)
-            imin = np.argmin((xpix - xmed) ** 2 + (ypix - ymed) ** 2)
-            med = [ypix[imin], xpix[imin]]
+        # check if splitting ROI increases variance explained
+        # ratio_vexp_split[n], ipack = two_comps(mov_norm_roi, lam, thresh_active)
+        # if ratio_vexp_split[n] > thresh_split:
+        #     # if greater than threshold, update ROI to include
+        #     # only the component with higher variance explained
+        #     lam, xp, active_frames = ipack
+        #     roi_corr[active_frames] = xp
+        #     if use_auto_thresh:
+        #         ix = lam > thresh_act_pix
+        #     else:
+        #         ix = lam > (lam.max() * thresh_act_pix)
+        #     xpix = xpix[ix]
+        #     ypix = ypix[ix]
+        #     lam = lam[ix]
+        #
+        #     # determine med for new ROI
+        #     ymed = np.median(ypix)
+        #     xmed = np.median(xpix)
+        #     imin = np.argmin((xpix - xmed) ** 2 + (ypix - ymed) ** 2)
+        #     med = [ypix[imin], xpix[imin]]
 
         ########################
         # SUBTRACT ROI FROM DATA
@@ -990,7 +1064,6 @@ def sparsery(
             ypix, xpix, lam, Ly_down, Lx_down
         )
         for j in range(n_scales):
-
             # unpack variables at each scale
             ypix_d, xpix_d, lam_d, Lx_d, mov_norm_d, mov_norm_sd_d = (
                 ypix_down[j],
@@ -1008,26 +1081,35 @@ def sparsery(
 
             # update standard deviation
             Mx = mov_norm_d[:, xpix_d + Lx_d * ypix_d]
-            x = (Mx**2 * (Mx > thresh_active)).sum(axis=0) ** 0.5
+            x = (Mx ** 2 * (Mx > thresh_active)).sum(axis=0) ** 0.5
             mov_norm_sd_d[ypix_d, xpix_d] = x
-        
-        stats.append({ # add to list of ROI stats
+
+        # multiply lam with the normalization factor used at the normalization step
+        if use_alt_norm:
+            if norm == 'max':
+                lam = lam * np.max(max_min_intensity)
+            else:  # default: norm == 'sd':
+                lam = lam * mov_sd_mov[ypix, xpix]
+        else:
+            lam = lam * mov_sd[ypix, xpix]
+
+        stats.append({  # add to list of ROI stats
             "ypix": ypix.astype(int),
             "xpix": xpix.astype(int),
-            "lam": lam if use_alt_norm else lam * mov_sd[ypix, xpix],
+            "lam": lam,
             "med": med,
             "footprint": max_scale_per_roi[n],
             "act_frames": act_frames
         })
-    
+
         if n % 1000 == 0:
             print("%d ROIs, score=%2.2f" % (n, max_val))
-        
+
     if neuropil_lam:
         print('***neuropil_lam=True, calculating neuropil_lam...***')
-        
+
         d0 = 10 if diameter is None or (isinstance(diameter, int) and
-                                    diameter == 0) else diameter
+                                        diameter == 0) else diameter
         if aspect is not None:
             diameter = int(d0[0]) if isinstance(d0, (list, np.ndarray)) else int(d0)
             dy, dx = int(aspect * diameter), diameter
@@ -1036,52 +1118,61 @@ def sparsery(
                       int(d0)) if not isinstance(d0, (list, np.ndarray)) else (int(d0[0]),
                                                                                int(d0[0]))
         rois = [
-        ROI(ypix=s["ypix"], xpix=s["xpix"], lam=s["lam"], med=s["med"], do_crop=do_crop)
-        for s in stats
+            ROI(ypix=s["ypix"], xpix=s["xpix"], lam=s["lam"], med=s["med"], do_crop=do_crop)
+            for s in stats
         ]
         for roi, s in zip(rois, stats):
             ellipse = roi.fit_ellipse(dy, dx)
             s["npix"] = roi.n_pixels
             s["radius"] = ellipse.radius
-        
+
         cell_pix = masks.create_cell_pix(stats, Ly=Ly, Lx=Lx,
-                                   lam_percentile=lam_percentile)
+                                         lam_percentile=lam_percentile)
         neuropil_masks = masks.create_neuropil_masks(ypixs=[stat["ypix"] for stat in stats],
-                                    xpixs=[stat["xpix"] for stat in stats], cell_pix=cell_pix,
-                                    inner_neuropil_radius = inner_neuropil_radius,
-                                    min_neuropil_pixels = min_neuropil_pixels, circular=circular)
-        
+                                                     xpixs=[stat["xpix"] for stat in stats], cell_pix=cell_pix,
+                                                     inner_neuropil_radius=inner_neuropil_radius,
+                                                     min_neuropil_pixels=min_neuropil_pixels, circular=circular)
+
         for k in range(len(stats)):
             stats[k]["neuropil_mask"] = neuropil_masks[k]
-        
+
         for stat in stats:
             act_frames = stat['act_frames']
             mov_act = mov_norm[act_frames]
-            neuropil = np.unravel_index(stat['neuropil_mask'], (Ly,Lx))
+            neuropil = np.unravel_index(stat['neuropil_mask'], (Ly, Lx))
             ypix_neu = neuropil[0]
             xpix_neu = neuropil[1]
             # npix = len(neuropil[1])
             roi_act = mov_act[:, ypix_neu * Lx + xpix_neu]
             lam = roi_act.mean(axis=0)
-            lam = lam / np.sum(lam**2) ** 0.5
+            lam = lam / np.sum(lam ** 2) ** 0.5
+
+            # multiply lam with the normalization factor used at the normalization step
+            if use_alt_norm:
+                if norm == 'max':
+                    lam = lam * np.max(max_min_intensity)
+                else:  # default: norm == 'sd':
+                    lam = lam * mov_sd_mov[ypix_neu, xpix_neu]
+            else:
+                lam = lam * mov_sd[ypix_neu, xpix_neu]
+
             stat['lam_neu'] = lam
             lam, neuropil_mask = zip(*sorted(zip(stat['lam_neu'], stat['neuropil_mask']), reverse=True)[:stat['npix']])
             lam = np.asarray(lam)
             stat['neuropil_mask'] = np.asarray(neuropil_mask)
-            
-            if norm == 'max': 
-                lam_normed = (lam-lam.min())/(lam.max()-lam.min()) #normalization to scale lam > 0          
+
+            if norm == 'max':
+                lam_normed = (lam - lam.min()) / (lam.max() - lam.min())  # normalization to scale lam > 0
                 stat['lam_neu'] = np.asarray(lam_normed)
-            
+
             else:
                 stat['lam_neu'] = lam
-                
-    
+
+
     else:
         print('***neuropil_lam=False***')
 
-
-    new_ops.update({ # new items to be added to ops
+    new_ops.update({  # new items to be added to ops
         "Vmax": max_val_per_roi,
         "ihop": max_scale_per_roi,
         "Vsplit": ratio_vexp_split,

@@ -70,7 +70,7 @@ def default_ops():
         "keep_movie_raw":
             False,  # whether to keep binary file of non-registered frames. 
         "nimg_init": 300,  # subsampled frames for finding reference image
-        "batch_size": 500,  # number of frames per batch
+        "batch_size": 500,  # number of frames per batch. If use_auto_thresh is true, set it to 2
         "maxregshift":
             0.1,  # max allowed registration shift, as a fraction of frame max(width and height)
         "align_by_chan":
@@ -171,11 +171,11 @@ def default_ops():
         "wang:thresh_act_pix": .2, # threshold based on lam max for selecting active pixels during ROI extension
         "wang:high_pass_overlapping": False, # If True, use overlapping instead of non-overlapping mean for temporal high pass during sparsedetect
         "wang:use_alt_norm": False, # use alternative normalzation for sparsedetect
-        'wang:norm_method':'max', # In sparsedetect, choose which method to use for movie normalization, if 'max', movie is normalized by max projection; if 'max-min', mov_norm = (mov-mov.min)/(mov.max-mov-min)
+        "wang:norm_method":'sd', # In sparsedetect, choose which method to use for movie normalization, if 'max', movie is normalized by max projection; if 'sd', normalized by sd
         "wang:rolling_width": 30, # only if use_alt_norm == True, width in frames for max or mean filter
         "wang:thresh_peak_default": None, # if not None, use this threshold for peak detection in sparsedetect (float >= 0)
-        "wang:downsample_scale": None, # if not None, use this downsampling scale for sparsedetect (int >= 0)
         'wang:movie_chunk': 0, #whetehr to use movie chunk for ROI detection, if >0, indicates the number of frames used for ROI detection
         "wang:neuropil_lam": False,  # If true, in sparsedetect generate neuropil mask and calculate neuropil lam
-        
+        "wang:thresh_peak_sd_down_scaling": 1, # This is the scaling factor for the peak detection using mean + thresh_peak_sd_down_scaling*sd of mov_norm_sd_down -- the standard deviation of downsampled movie at the selected spatial scale
+        "wang:use_auto_thresh": False, # If True, use automatically calculated thresholds for ROI detection
     }
