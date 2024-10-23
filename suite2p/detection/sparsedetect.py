@@ -869,7 +869,7 @@ def sparsery(
     thresh_peak_norm_down = 0  # only used when use_auto_thresh is true
     if use_auto_thresh:
         # calculate mean of mov_norm_down for each pixel for the selected spatial scale
-        mov_norm_down_mean = np.mean(mov_norm_down[spatial_scale, :, :], axis=0)
+        mov_norm_down_mean = np.mean(mov_norm_down[spatial_scale], axis=0)
         # calculate mean of mean_mov_down_mean across all the pixels
         mean_mov_down_mean = np.mean(mov_norm_down_mean)
         # calculate standard deviation of mov_norm_down for each pixel for the selected spatial scale
